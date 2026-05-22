@@ -32,7 +32,10 @@ The project supports local execution (Python), containerized execution (Docker),
 
 - Classifies job-related emails into actionable categories
 - Applies Gmail labels under a consistent `Job/*` taxonomy
-- Optionally generates reply drafts (never auto-sends)
+- Generates approval-gated reply drafts (never auto-sends)
+- Records every decision and Gmail action in the Trust Dashboard audit trail
+- Queues risky or low-confidence mail for human review
+- Learns correction preferences such as `never_draft` and `always_review`
 - Runs continuously in daemon mode with configurable polling
 - Supports Groq (cloud LLM) and Ollama (local LLM)
 - Supports historical mailbox backfill without relabeling already-labeled messages
@@ -45,6 +48,8 @@ The project supports local execution (Python), containerized execution (Docker),
 - `daemon.py`: continuous polling loop for 24/7 operation
 - `agents/classifier_agent.py`: category and action decision logic
 - `tools/gmail_tool.py`: Gmail OAuth, fetch, labels, drafts
+- `trust/*`: confidence gates, audit DB, review queue, undo, dashboard APIs
+- `web/templates` and `web/static`: production Trust Dashboard UI
 - `backfill.py`: historical labeling pass with date windows
 - `railway_app.py`: web OAuth + background loop for Railway deployments
 - `tools/s3_state.py`: optional S3-compatible token persistence
@@ -112,6 +117,28 @@ python main.py
 ```bash
 python daemon.py
 ```
+
+### Trust Dashboard
+
+Start the FastAPI app and open `/dashboard`:
+
+```bash
+uvicorn railway_app:app --host 0.0.0.0 --port 8080
+```
+
+Set `DASHBOARD_SECRET` and unlock with:
+
+```text
+http://localhost:8080/dashboard?key=YOUR_DASHBOARD_SECRET
+```
+
+The dashboard includes:
+
+- Review queue for approval-gated replies
+- Audit trail with decision, confidence, risk category, and cited context
+- Undo for reversible actions inside the 24-hour safety window
+- Daily digest of handled, queued, and blocked high-risk emails
+- Preference rules with YAML export at `/api/preferences.yaml`
 
 ### Backfill Historical Emails
 
@@ -217,6 +244,8 @@ Important variables:
 - Gmail OAuth: `GMAIL_CREDENTIALS_JSON`, `PUBLIC_BASE_URL`
 - LLM: `USE_OLLAMA`, `OLLAMA_MODEL`, `OLLAMA_BASE_URL`, `GROQ_API_KEY`
 - Backfill: `BACKFILL_*`
+- Trust: `DATABASE_URL`, `DASHBOARD_SECRET`, `OUTBOUND_MODE`, `AUTO_ARCHIVE_ENABLED`
+- Local UI testing: `MAILAI_DISABLE_DAEMON=true` renders the dashboard without starting inbox processing
 
 ## Security Best Practices
 

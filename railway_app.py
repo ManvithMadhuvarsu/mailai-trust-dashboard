@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from google_auth_oauthlib.flow import Flow
@@ -20,6 +21,8 @@ from tools.gmail_tool import (
     _materialize_credentials_from_env,
 )
 from tools.s3_state import try_persist_file, try_restore_file
+from trust.dashboard import router as dashboard_router
+from trust.database import init_db
 
 
 load_dotenv()
@@ -64,6 +67,10 @@ def _token_exists() -> bool:
 
 
 def _start_daemon_loop_once():
+    if os.getenv("MAILAI_DISABLE_DAEMON", "").strip().lower() in {"1", "true", "yes"}:
+        logger.info("MAILAI_DISABLE_DAEMON=true; background daemon loop disabled.")
+        return
+
     # Prevent multiple background threads
     if getattr(_start_daemon_loop_once, "_started", False):
         return
@@ -96,6 +103,8 @@ def _start_daemon_loop_once():
 
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="web/static"), name="static")
+app.include_router(dashboard_router)
 
 
 @app.on_event("startup")
@@ -103,6 +112,7 @@ def _startup():
     # Ensure dirs exist for volume mounts
     Path("data").mkdir(exist_ok=True)
     Path("config").mkdir(exist_ok=True)
+    init_db()
     _materialize_credentials_from_env()
     # If persistent volumes aren't available, optionally restore token from S3-compatible bucket.
     try_restore_file(TOKEN_PATH)
@@ -125,6 +135,7 @@ def home():
         <p>Status: <b>{status}</b></p>
         <p>Polling: every <b>{os.getenv("POLL_INTERVAL_MINUTES","180")}</b> minutes</p>
         <p><a href="/login">Sign in with Google</a></p>
+        <p><a href="/dashboard">Open Trust Dashboard</a></p>
       </body>
     </html>
     """

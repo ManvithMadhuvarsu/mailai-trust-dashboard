@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MailAI Trust Dashboard</title>
+    <link rel="stylesheet" href="/static/dashboard.css">
+    <script defer src="/static/dashboard.js"></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="shell">
+      <header class="hero">
+        <nav class="topbar">
+          <div class="brand-mark">
+            <span class="brand-glyph">M</span>
+            <span>
+              <strong>MailAI</strong>
+              <small>Trust Dashboard</small>
+            </span>
+          </div>
+          <div class="topbar-actions">
+            <a href="/api/preferences.yaml" class="ghost-link">Export YAML</a>
+            <button class="refresh-button" data-refresh>Refresh live state</button>
+          </div>
+        </nav>
+
+        <section class="hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Controlled autonomy for real inboxes</p>
+            <h1>Every MailAI action is visible, explainable, and reversible.</h1>
+            <p class="hero-text">
+              Approval-gated drafts, confidence-based routing, preference memory,
+              and audit proof in one production control room.
+            </p>
+            <div class="mode-strip">
+              <span>Outbound: <strong>{{ outbound_mode }}</strong></span>
+              <span>Auto archive: <strong>{{ auto_archive }}</strong></span>
+              {% if not secret_configured %}
+              <span class="warning-pill">Set DASHBOARD_SECRET before public deploy</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <aside class="trust-score-card">
+            <span class="score-label">Current queue</span>
+            <strong>{{ metrics.queued }}</strong>
+            <p>Emails waiting for a human decision before any outbound draft is created.</p>
+          </aside>
+        </section>
+      </header>
+
+      <section class="metric-grid" aria-label="Trust metrics">
+        <article class="metric-card">
+          <span>Audited Emails</span>
+          <strong>{{ metrics.audited }}</strong>
+          <p>Decisions recorded with reason and context.</p>
+        </article>
+        <article class="metric-card">
+          <span>Queued Review</span>
+          <strong>{{ metrics.queued }}</strong>
+          <p>Replies or risky actions awaiting approval.</p>
+        </article>
+        <article class="metric-card">
+          <span>Actions Logged</span>
+          <strong>{{ metrics.actions }}</strong>
+          <p>Labels, queues, drafts, skips, and undoable events.</p>
+        </article>
+        <article class="metric-card">
+          <span>Undo Ready</span>
+          <strong>{{ metrics.reversible }}</strong>
+          <p>Reversible actions inside the safety window.</p>
+        </article>
+      </section>
+
+      <section class="workspace-grid">
+        <article class="panel review-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Approval Gate</p>
+              <h2>Review Queue</h2>
+            </div>
+            <span class="live-dot">Live</span>
+          </div>
+          <div id="reviewList" class="review-list skeleton-list"></div>
+        </article>
+
+        <article class="panel audit-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Proof Trail</p>
+              <h2>Latest Audit Decisions</h2>
+            </div>
+            <button class="soft-button" data-refresh>Reload</button>
+          </div>
+          <div id="auditList" class="audit-list skeleton-list"></div>
+        </article>
+      </section>
+
+      <section class="workspace-grid lower-grid">
+        <article class="panel digest-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Daily Brief</p>
+              <h2>What MailAI Did Today</h2>
+            </div>
+          </div>
+          <div id="dailyDigest" class="digest-copy"></div>
+        </article>
+
+        <article class="panel preferences-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Memory Layer</p>
+              <h2>Preference Rules</h2>
+            </div>
+          </div>
+
+          <form id="preferenceForm" class="preference-form">
+            <select name="key">
+              <option value="always_review">Always review</option>
+              <option value="never_draft">Never draft replies</option>
+              <option value="label_as_fyi">Treat as FYI</option>
+            </select>
+            <select name="scope_type">
+              <option value="domain">Domain</option>
+              <option value="sender">Sender</option>
+              <option value="global">Global</option>
+              <option value="subject_contains">Subject contains</option>
+            </select>
+            <input name="scope_value" placeholder="example.com or sender@email.com">
+            <button type="submit">Save Rule</button>
+          </form>
+
+          <div id="preferenceList" class="preference-list"></div>
+        </article>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
+

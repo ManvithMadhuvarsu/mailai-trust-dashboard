@@ -375,6 +375,65 @@ def apply_label(service, message_id: str, label_id: str) -> bool:
         return False
 
 
+def remove_label(service, message_id: str, label_id: str) -> bool:
+    """Remove a label from a Gmail message. Returns True on success."""
+    try:
+        service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={"removeLabelIds": [label_id]},
+        ).execute()
+        return True
+    except HttpError as e:
+        logger.warning(f"Failed to remove label from {message_id}: {e}")
+        print(f"Failed to remove label: {e}")
+        return False
+
+
+def archive_message(service, message_id: str) -> bool:
+    """Archive a Gmail message by removing it from Inbox."""
+    try:
+        service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={"removeLabelIds": ["INBOX"]},
+        ).execute()
+        return True
+    except HttpError as e:
+        logger.warning(f"Failed to archive {message_id}: {e}")
+        print(f"Failed to archive message: {e}")
+        return False
+
+
+def restore_message_to_inbox(service, message_id: str) -> bool:
+    """Restore an archived Gmail message to Inbox."""
+    try:
+        service.users().messages().modify(
+            userId="me",
+            id=message_id,
+            body={"addLabelIds": ["INBOX"]},
+        ).execute()
+        return True
+    except HttpError as e:
+        logger.warning(f"Failed to restore {message_id} to inbox: {e}")
+        print(f"Failed to restore message: {e}")
+        return False
+
+
+def delete_draft(service, draft_id: str) -> bool:
+    """Delete a Gmail draft by ID. Returns True on success."""
+    if not draft_id:
+        return True
+    try:
+        service.users().drafts().delete(userId="me", id=draft_id).execute()
+        logger.info(f"Draft deleted: {draft_id}")
+        return True
+    except HttpError as e:
+        logger.warning(f"Failed to delete draft {draft_id}: {e}")
+        print(f"Failed to delete draft: {e}")
+        return False
+
+
 def save_draft(service, to: str, subject: str, body: str, thread_id: str = None) -> str | None:
     """Save an email as a Gmail draft (does NOT send automatically)."""
     try:

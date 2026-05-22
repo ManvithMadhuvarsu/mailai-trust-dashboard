@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MailAI Trust Dashboard Locked</title>
+    <link rel="stylesheet" href="/static/dashboard.css">
+  </head>
+  <body class="locked-screen">
+    <main class="lock-card">
+      <p class="eyebrow">Protected Control Room</p>
+      <h1>MailAI Trust Dashboard</h1>
+      <p>
+        Dashboard access is locked. Open this page with
+        <code>/dashboard?key=YOUR_DASHBOARD_SECRET</code> once to create a secure session cookie.
+      </p>
+      <form class="secret-form" method="get" action="/dashboard">
+        <input name="key" type="password" placeholder="Dashboard secret" autocomplete="current-password">
+        <button type="submit">Unlock Dashboard</button>
+      </form>
+    </main>
+  </body>
+</html>
+
