@@ -232,3 +232,90 @@ def build_trust_decision(
         "outbound_mode": outbound_mode,
     }
 
+
+
+# ── Module 4: Tone Classifier ─────────────────────────────────────────────────
+
+_HIGH_FORMALITY = {
+    "pursuant", "hereinafter", "notwithstanding", "aforementioned",
+    "heretofore", "whilst", "therein", "wherein", "henceforth",
+    "herewith", "forthwith", "duly", "aforestated",
+}
+
+_LOW_FORMALITY = {
+    "hey", "yo", "lol", "btw", "gonna", "wanna", "kinda", "sorta",
+    "damn", "crap", "wtf", "omg", "nope", "yep", "cool", "ok",
+}
+
+_AGGRESSIVE_SIGNALS = [
+    "this is unacceptable", "you failed", "i demand", "legal action",
+    "this is ridiculous", "absolutely terrible", "worst experience",
+]
+
+
+def score_draft_tone(draft_body: str) -> dict:
+    """
+    Score the formality and tone of a draft reply.
+    Returns a dict with score (0=informal, 1=formal), delta from baseline,
+    flagged bool, and detected signals.
+    """
+    if not draft_body:
+        return {"score": 0.5, "delta": 0.0, "flagged": False, "signals": []}
+
+    words = draft_body.lower().split()
+    total = max(len(words), 1)
+    clean = [w.strip(".,!?;:\"'") for w in words]
+
+    high_count = sum(1 for w in clean if w in _HIGH_FORMALITY)
+    low_count = sum(1 for w in clean if w in _LOW_FORMALITY)
+
+    score = 0.5 + (high_count * 0.05) - (low_count * 0.08)
+    score = max(0.0, min(1.0, round(score, 3)))
+
+    # Baseline for job-search emails is ~0.65 (professional)
+    baseline = float(os.getenv("TONE_BASELINE_SCORE", "0.65"))
+    delta = round(abs(score - baseline), 3)
+    threshold = float(os.getenv("TONE_FLAG_THRESHOLD", "0.30"))
+
+    signals = []
+    if high_count:
+        signals.append(f"over-formal ({high_count} legalese word(s))")
+    if low_count:
+        signals.append(f"too casual ({low_count} informal word(s))")
+
+    body_lower = draft_body.lower()
+    for phrase in _AGGRESSIVE_SIGNALS:
+        if phrase in body_lower:
+            signals.append(f"aggressive phrase: '{phrase}'")
+
+    flagged = delta > threshold or any("aggressive" in s for s in signals)
+
+    return {
+        "score": score,
+        "baseline": baseline,
+        "delta": delta,
+        "flagged": flagged,
+        "signals": signals,
+    }
+
+
+def apply_tone_check(decision: dict, draft_body: str) -> dict:
+    """
+    Run tone check on a draft and inject result into the decision dict.
+    If flagged, escalate policy_action to QUEUE_REVIEW.
+    """
+    if not draft_body:
+        return decision
+
+    tone = score_draft_tone(draft_body)
+    decision["tone_check"] = tone
+
+    if tone["flagged"] and decision.get("policy_action") == "CREATE_DRAFT":
+        decision["policy_action"] = "QUEUE_REVIEW"
+        decision["requires_review"] = True
+        decision["review_reason"] = (
+            decision.get("review_reason", "") +
+            f" Tone flagged: {'; '.join(tone['signals'])}."
+        ).strip()
+
+    return decision
