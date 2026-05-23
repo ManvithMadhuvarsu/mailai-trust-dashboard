@@ -264,3 +264,134 @@ def api_daily_digest(request: Request, db: Session = Depends(get_db)):
         }
     )
 
+
+@router.get("/api/digest/weekly")
+def api_weekly_digest(request: Request, db: Session = Depends(get_db)):
+    """
+    Module 3 — Weekly preference drift report.
+    Returns 7-day stats + detected pattern changes.
+    """
+    _require_dashboard(request)
+    from datetime import timedelta
+    import json
+
+    now = datetime.now(timezone.utc)
+    week_start = now - timedelta(days=7)
+    prev_week_start = week_start - timedelta(days=7)
+
+    this_week = db.scalars(select(AuditEvent).where(AuditEvent.created_at >= week_start)).all()
+    prev_week = db.scalars(
+        select(AuditEvent).where(
+            AuditEvent.created_at >= prev_week_start,
+            AuditEvent.created_at < week_start,
+        )
+    ).all()
+
+    def _by_category(rows):
+        out = {}
+        for r in rows:
+            out[r.job_category] = out.get(r.job_category, 0) + 1
+        return out
+
+    this_cats = _by_category(this_week)
+    prev_cats = _by_category(prev_week)
+
+    # Detect drift: categories that shifted >25% week-over-week
+    drift = []
+    all_cats = set(this_cats) | set(prev_cats)
+    for cat in all_cats:
+        this_n = this_cats.get(cat, 0)
+        prev_n = prev_cats.get(cat, 0)
+        if prev_n == 0 and this_n > 2:
+            drift.append({"category": cat, "change": "new", "this_week": this_n, "prev_week": prev_n})
+        elif prev_n > 0:
+            pct = (this_n - prev_n) / prev_n
+            if abs(pct) >= 0.25:
+                drift.append({
+                    "category": cat,
+                    "change": f"{'+' if pct > 0 else ''}{round(pct * 100)}%",
+                    "this_week": this_n,
+                    "prev_week": prev_n,
+                })
+
+    this_queued = sum(1 for r in this_week if r.requires_review)
+    prev_queued = sum(1 for r in prev_week if r.requires_review)
+    this_hi_risk = sum(1 for r in this_week if r.risk_category in {"FINANCIAL", "LEGAL", "PERSONAL"})
+
+    # Preference corrections this week
+    from trust.models import Preference
+    new_prefs = db.scalars(
+        select(Preference).where(
+            Preference.created_at >= week_start,
+            Preference.source == "review_correction",
+        )
+    ).all()
+
+    return JSONResponse({
+        "period": f"{week_start.date().isoformat()} to {now.date().isoformat()}",
+        "this_week_total": len(this_week),
+        "prev_week_total": len(prev_week),
+        "this_week_queued": this_queued,
+        "prev_week_queued": prev_queued,
+        "high_risk_blocked": this_hi_risk,
+        "by_category": this_cats,
+        "category_drift": drift,
+        "new_learned_preferences": len(new_prefs),
+        "learned_preferences_detail": [
+            {"key": p.key, "scope_type": p.scope_type, "scope_value": p.scope_value}
+            for p in new_prefs
+        ],
+        "drift_summary": (
+            f"This week: {len(this_week)} emails vs {len(prev_week)} last week. "
+            f"{len(drift)} category shift(s) detected. "
+            f"{len(new_prefs)} new preference rule(s) learned from your corrections."
+        ) if drift or new_prefs else (
+            f"Stable week: {len(this_week)} emails processed, no significant pattern changes."
+        ),
+    })
+
+
+@router.post("/api/actions/undo-last")
+async def api_undo_last(request: Request, db: Session = Depends(get_db)):
+    """
+    Undo last N reversible actions (default 5) within the 24h safety window.
+    Body: { "count": 5 }
+    """
+    _require_dashboard(request)
+    from datetime import timedelta
+
+    payload = {}
+    if request.headers.get("content-type", "").startswith("application/json"):
+        payload = await request.json()
+
+    count = min(int(payload.get("count", 5)), 10)  # cap at 10
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    actions = db.scalars(
+        select(ActionEvent)
+        .where(
+            ActionEvent.reversible.is_(True),
+            ActionEvent.status == "success",
+            ActionEvent.created_at >= cutoff,
+        )
+        .order_by(ActionEvent.created_at.desc())
+        .limit(count)
+    ).all()
+
+    if not actions:
+        return JSONResponse({"undone": [], "message": "No reversible actions in the last 24 hours."})
+
+    service = get_gmail_service()
+    results = []
+    for action in actions:
+        try:
+            result = undo_action(db, service, action.id)
+            results.append({"action_id": action.id, "status": "undone", "type": action.action_type})
+        except Exception as e:
+            results.append({"action_id": action.id, "status": "failed", "error": str(e)})
+
+    undone_count = sum(1 for r in results if r["status"] == "undone")
+    return JSONResponse({
+        "undone": results,
+        "message": f"Rolled back {undone_count} of {len(results)} actions.",
+    })
