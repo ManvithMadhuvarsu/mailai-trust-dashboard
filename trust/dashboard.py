@@ -131,7 +131,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "mailai_dashboard_auth",
             secret,
             httponly=True,
-            secure=True,
+            secure=request.url.scheme == "https",
             samesite="lax",
             max_age=60 * 60 * 12,
         )
@@ -139,15 +139,16 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 
     if not _authorized(request):
         return templates.TemplateResponse(
+            request,
             "dashboard_locked.html",
-            {"request": request, "secret_configured": bool(secret)},
+            {"secret_configured": bool(secret)},
             status_code=401,
         )
 
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         {
-            "request": request,
             "metrics": _metrics(db),
             "secret_configured": bool(secret),
             "outbound_mode": os.getenv("OUTBOUND_MODE", "queue_review"),

@@ -157,9 +157,10 @@ def login(request: Request):
     )
     # Store state + PKCE verifier in cookies for callback validation/token exchange.
     resp = RedirectResponse(url=authorization_url)
-    resp.set_cookie("oauth_state", state, httponly=True, secure=True, samesite="lax")
+    secure = request.url.scheme == "https"
+    resp.set_cookie("oauth_state", state, httponly=True, secure=secure, samesite="lax")
     if getattr(flow, "code_verifier", None):
-        resp.set_cookie("oauth_code_verifier", flow.code_verifier, httponly=True, secure=True, samesite="lax")
+        resp.set_cookie("oauth_code_verifier", flow.code_verifier, httponly=True, secure=secure, samesite="lax")
     return resp
 
 
